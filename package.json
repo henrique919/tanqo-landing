@@ -1,0 +1,9 @@
+{
+  "name": "tanqo-landing",
+  "private": true,
+  "description": "Static Tanqo marketing site for tanqo.co",
+  "scripts": {
+    "build": "python scripts/generate_pages.py",
+    "preview": "python -m http.server 8080"
+  }
+}
