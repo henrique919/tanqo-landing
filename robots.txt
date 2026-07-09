@@ -2,3 +2,4 @@ User-agent: *
 Allow: /
 
 Sitemap: https://tanqo.co/sitemap.xml
+Sitemap: https://tanqo.co/sitemap-index.xml
