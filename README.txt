@@ -3,7 +3,7 @@ Tanqo landing site (tanqo.co)
 Static HTML site deployed via GitHub Pages.
 
 Quick start:
-  npm run build    # regenerate sitemap pages from scripts/generate_pages.py
+  npm run build    # regenerate SEO pages + sync sitemaps
   npm run preview  # local server on http://localhost:8080
 
 Pages:

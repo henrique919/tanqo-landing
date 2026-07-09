@@ -3,7 +3,7 @@
   "private": true,
   "description": "Static Tanqo marketing site for tanqo.co",
   "scripts": {
-    "build": "python scripts/generate_pages.py",
+    "build": "python scripts/generate_pages.py && python scripts/sync_sitemaps.py",
     "preview": "python -m http.server 8080"
   }
 }
