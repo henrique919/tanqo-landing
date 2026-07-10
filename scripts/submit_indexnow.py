@@ -1,19 +1,5 @@
 #!/usr/bin/env python3
-"""Submit all sitemap URLs to IndexNow (https://www.indexnow.org/).
-
-IndexNow lets a site push instant "this URL changed" notifications to
-participating search engines (Bing, Yandex, and others sharing the same
-endpoint) instead of waiting for the next crawl.
-
-Usage:
-    python scripts/submit_indexnow.py
-    python scripts/submit_indexnow.py --sitemap sitemap-0.xml
-    python scripts/submit_indexnow.py --url https://tanqo.co/pricing/ --url https://tanqo.co/
-
-Requires the IndexNow key file to already be published at the site root,
-e.g. https://tanqo.co/<key>.txt containing just the key string, before
-search engines will trust submissions for this host.
-"""
+"""Submit all sitemap URLs to IndexNow (https://www.indexnow.org/)."""
 
 from __future__ import annotations
 
@@ -21,6 +7,7 @@ import argparse
 import json
 import re
 import sys
+import time
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -29,7 +16,12 @@ ROOT = Path(__file__).resolve().parents[1]
 HOST = "tanqo.co"
 KEY = "bdfb516d0f1a36e81ef03ea07075439a"
 KEY_LOCATION = f"https://{HOST}/{KEY}.txt"
-ENDPOINT = "https://api.indexnow.org/indexnow"
+# Bing (api.indexnow.org) may return 403 until the site is verified in Bing Webmaster
+# Tools; Yandex accepts the same payload and shares with the IndexNow network.
+ENDPOINTS = (
+    "https://yandex.com/indexnow",
+    "https://api.indexnow.org/indexnow",
+)
 
 
 def read_urls_from_sitemap(sitemap_path: Path) -> list[str]:
@@ -37,7 +29,46 @@ def read_urls_from_sitemap(sitemap_path: Path) -> list[str]:
     return re.findall(rf"<loc>(https://{re.escape(HOST)}/[^<]*)</loc>", text)
 
 
-def submit(url_list: list[str], host: str = HOST, key: str = KEY, key_location: str = KEY_LOCATION) -> tuple[int, str]:
+def fetch_key_file(key_location: str = KEY_LOCATION, key: str = KEY) -> tuple[int, str]:
+    req = urllib.request.Request(key_location, method="GET", headers={"User-Agent": "tanqo-indexnow/1.0"})
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            return resp.status, resp.read().decode("utf-8", errors="replace")
+    except urllib.error.HTTPError as e:
+        return e.code, e.read().decode("utf-8", errors="replace")
+
+
+def wait_for_key_live(
+    key_location: str = KEY_LOCATION,
+    key: str = KEY,
+    *,
+    timeout_sec: int = 600,
+    interval_sec: int = 15,
+) -> bool:
+    deadline = time.monotonic() + timeout_sec
+    attempt = 0
+    while time.monotonic() < deadline:
+        attempt += 1
+        status, body = fetch_key_file(key_location, key)
+        if status == 200 and body.strip() == key:
+            print(f"IndexNow key file is live at {key_location} (attempt {attempt}).")
+            return True
+        print(
+            f"Waiting for key file (attempt {attempt}): HTTP {status}, "
+            f"body={body.strip()!r} (want {key!r})",
+            file=sys.stderr,
+        )
+        time.sleep(interval_sec)
+    return False
+
+
+def submit(
+    url_list: list[str],
+    endpoint: str,
+    host: str = HOST,
+    key: str = KEY,
+    key_location: str = KEY_LOCATION,
+) -> tuple[int, str]:
     payload = {
         "host": host,
         "key": key,
@@ -46,7 +77,7 @@ def submit(url_list: list[str], host: str = HOST, key: str = KEY, key_location: 
     }
     body = json.dumps(payload).encode("utf-8")
     req = urllib.request.Request(
-        ENDPOINT,
+        endpoint,
         data=body,
         headers={"Content-Type": "application/json; charset=utf-8"},
         method="POST",
@@ -58,20 +89,40 @@ def submit(url_list: list[str], host: str = HOST, key: str = KEY, key_location: 
         return e.code, e.read().decode("utf-8", errors="replace")
 
 
+def submission_ok(status: int) -> bool:
+    return status in (200, 202)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Submit URLs to IndexNow.")
     parser.add_argument(
         "--sitemap",
         default="sitemap.xml",
-        help="Sitemap file (relative to repo root) to read URLs from. Default: sitemap.xml",
+        help="Sitemap file (relative to repo root). Default: sitemap.xml",
     )
     parser.add_argument(
         "--url",
         action="append",
         dest="urls",
-        help="Submit specific URL(s) instead of reading from a sitemap. Can be repeated.",
+        help="Submit specific URL(s) instead of reading from a sitemap.",
+    )
+    parser.add_argument(
+        "--wait-for-live",
+        action="store_true",
+        help="Poll keyLocation until the key file returns HTTP 200 with the expected key.",
+    )
+    parser.add_argument(
+        "--wait-timeout",
+        type=int,
+        default=600,
+        help="Max seconds to wait when --wait-for-live is set (default: 600).",
     )
     args = parser.parse_args()
+
+    if args.wait_for_live:
+        if not wait_for_key_live(timeout_sec=args.wait_timeout):
+            print("Timed out waiting for IndexNow key file to go live.", file=sys.stderr)
+            return 1
 
     if args.urls:
         url_list = args.urls
@@ -86,22 +137,29 @@ def main() -> int:
         print("No URLs to submit.", file=sys.stderr)
         return 1
 
-    print(f"Submitting {len(url_list)} URL(s) to {ENDPOINT}")
+    print(f"Submitting {len(url_list)} URL(s)")
     print(f"host={HOST} key={KEY} keyLocation={KEY_LOCATION}")
 
-    status, body = submit(url_list)
+    any_ok = False
+    for endpoint in ENDPOINTS:
+        print(f"\nPOST {endpoint}")
+        status, body = submit(url_list, endpoint)
+        print(f"HTTP {status}")
+        print(body if body else "(empty response body)")
+        if submission_ok(status):
+            any_ok = True
+            print("Accepted by this endpoint.")
+        elif status == 403 and "UserForbiddedToAccessSite" in body:
+            print(
+                "Bing has not authorized this host yet (verify in Bing Webmaster Tools if needed).",
+                file=sys.stderr,
+            )
 
-    print(f"HTTP {status}")
-    print(body if body else "(empty response body)")
-
-    if status == 200:
-        print("IndexNow submission succeeded.")
+    if any_ok:
+        print("\nIndexNow submission succeeded (at least one endpoint accepted).")
         return 0
-    if status == 202:
-        print("IndexNow submission accepted (key not yet verified).")
-        return 0
 
-    print("IndexNow submission failed.", file=sys.stderr)
+    print("\nIndexNow submission failed on all endpoints.", file=sys.stderr)
     return 1
 
 
