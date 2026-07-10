@@ -38,6 +38,7 @@ jobs:
 
   # tanqo.co DNS points at Render; GitHub Pages alone does not update the live site.
   deploy-render:
+    needs: deploy
     runs-on: ubuntu-latest
     steps:
       - name: Trigger Render production deploy
