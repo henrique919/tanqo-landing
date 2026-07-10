@@ -35,3 +35,18 @@ jobs:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
+
+  # tanqo.co DNS points at Render; GitHub Pages alone does not update the live site.
+  deploy-render:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger Render production deploy
+        env:
+          RENDER_DEPLOY_HOOK_URL: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
+        run: |
+          if [ -z "$RENDER_DEPLOY_HOOK_URL" ]; then
+            echo "::warning::RENDER_DEPLOY_HOOK_URL is not set. Add the Render deploy hook URL as a repo secret so tanqo.co updates on every push to main."
+            exit 0
+          fi
+          curl -fsS -X POST "$RENDER_DEPLOY_HOOK_URL"
+          echo "Render deploy triggered."
