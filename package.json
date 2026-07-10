@@ -4,6 +4,7 @@
   "description": "Static Tanqo marketing site for tanqo.co",
   "scripts": {
     "build": "python scripts/generate_pages.py && python scripts/sync_sitemaps.py",
-    "preview": "python -m http.server 8080"
+    "preview": "python -m http.server 8080",
+    "submit-indexnow": "python scripts/submit_indexnow.py"
   }
 }

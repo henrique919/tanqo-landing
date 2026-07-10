@@ -1,0 +1,33 @@
+name: Submit IndexNow
+
+# IndexNow (https://www.indexnow.org/) lets the site push instant
+# "these URLs changed" notifications to participating search engines
+# instead of waiting for normal crawl discovery. The IndexNow key is
+# public by design (it's just a proof-of-ownership token verified via
+# a static file at the site root), so no secrets are required here.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "sitemap.xml"
+      - "sitemap-0.xml"
+      - "**/index.html"
+      - "index.html"
+      - "sep.html"
+      - "scripts/submit_indexnow.py"
+  workflow_dispatch:
+
+jobs:
+  submit:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: Submit sitemap URLs to IndexNow
+        run: python scripts/submit_indexnow.py
